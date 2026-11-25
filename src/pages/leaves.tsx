@@ -1,0 +1,342 @@
+import { apiFetch, safeJson } from "@/lib/api";
+import ConfirmDeleteButton from "@/components/ConfirmDeleteButton";
+import EditLeaveDialog from "@/components/leaves/EditLeaveDialog";
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { queryClient } from "@/lib/queryClient";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
+import { CalendarOff, Plus, CheckCircle2, XCircle, Clock, Pencil } from "lucide-react";
+import LeaveBalanceCards from "@/components/leaves/LeaveBalanceCards";
+import WhoIsAway from "@/components/leaves/WhoIsAway";
+import LeaveSummary from "@/components/leaves/LeaveSummary";
+import LeavePolicies from "@/components/leaves/LeavePolicies";
+import { LEAVE_TYPE_LABELS, refreshLeave } from "@/lib/leave";
+import { EmptyState } from "@/components/ui/states";
+
+const statusStyles: Record<string, { className: string; label: string }> = {
+  pending: { className: "bg-chart-4/10 text-chart-4", label: "Pending" },
+  approved: { className: "bg-chart-2/10 text-chart-2", label: "Approved" },
+  rejected: { className: "bg-destructive/10 text-destructive", label: "Rejected" },
+  cancelled: { className: "bg-muted text-muted-foreground", label: "Cancelled" },
+};
+
+const leaveTypeLabels = LEAVE_TYPE_LABELS;
+
+export default function LeavesPage() {
+  const { token, user } = useAuth();
+  const { toast } = useToast();
+  const isAdmin = ["org_admin", "teacher", "manager"].includes(user?.role || "");
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({
+    leaveType: "casual",
+    startDate: "",
+    endDate: "",
+    reason: "",
+    isHalfDay: false,
+    halfDayPeriod: "morning" as "morning" | "afternoon",
+  });
+
+  const { data: myLeaves, isLoading: myLoading } = useQuery({
+    queryKey: ["/api/leaves/my"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/leaves/my", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  // Teachers review their assigned students' requests; admins and managers use
+  // the organization list. The query key stays shared so one invalidation works.
+  const orgLeavesPath = user?.role === "teacher" ? "/api/leaves/team" : "/api/leaves/org";
+  const { data: orgLeaves, isLoading: orgLoading } = useQuery({
+    queryKey: ["/api/leaves/org"],
+    queryFn: async () => {
+      const res = await apiFetch(orgLeavesPath, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+    enabled: isAdmin,
+  });
+
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const canSummarize = ["org_admin", "manager"].includes(user?.role || "");
+
+  const createLeave = useMutation({
+    mutationFn: async (data: typeof form) => {
+      const res = await apiFetch("/api/leaves", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshLeave();
+      setOpen(false);
+      setForm({ leaveType: "casual", startDate: "", endDate: "", reason: "", isHalfDay: false, halfDayPeriod: "morning" });
+      toast({ title: "Leave request submitted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const approveLeave = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const res = await apiFetch(`/api/leaves/${id}/approve`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Failed to update");
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshLeave();
+      toast({ title: "Leave request updated" });
+    },
+  });
+
+  // Admins only: correct or remove anyone's leave request.
+  const isOrgAdmin = user?.role === "org_admin";
+  const [editing, setEditing] = useState<any>(null);
+  const deleteLeave = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`/api/leaves/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error((await safeJson(res))?.message || "Failed to delete");
+      return res.json();
+    },
+    onSuccess: () => {
+      refreshLeave();
+      toast({ title: "Leave request deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  // The person withdraws their own pending leave, or approved leave that hasn't started; an admin revokes any.
+  const cancelLeave = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiFetch(`/api/leaves/${id}/cancel`, { method: "PUT", headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error((await safeJson(res))?.message || "Failed to cancel");
+      return res.json();
+    },
+    onSuccess: () => { refreshLeave(); toast({ title: "Leave cancelled", description: "Its days are back in the balance." }); },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+  const today = new Date().toISOString().slice(0, 10);
+  const canCancel = (leave: any, showActions: boolean) => leave.status === "pending" || (leave.status === "approved" && (isOrgAdmin && showActions ? true : leave.startDate > today));
+
+  const renderLeaveCard = (leave: any, showActions: boolean) => {
+    const ss = statusStyles[leave.status] || statusStyles.pending;
+    return (
+      <div key={leave._id} className="p-4 rounded-md border border-border/50 space-y-3" data-testid={`card-leave-${leave._id}`}>
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            {leave.userId && typeof leave.userId === "object" && (
+              <p className="font-medium text-sm">{leave.userId.firstName} {leave.userId.lastName}</p>
+            )}
+            <p className="text-sm font-medium">{leaveTypeLabels[leave.leaveType]}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {new Date(leave.startDate).toLocaleDateString()} - {new Date(leave.endDate).toLocaleDateString()}
+              {leave.isHalfDay && <span className="ml-2 text-chart-5">(Half-day: {leave.halfDayPeriod})</span>}
+            </p>
+          </div>
+          <span className={`text-xs px-2 py-1 rounded-md shrink-0 ${ss.className}`}>{ss.label}</span>
+        </div>
+        <p className="text-sm text-muted-foreground">{leave.reason}</p>
+        {showActions && leave.status === "pending" && (
+          <div className="flex gap-2 pt-1">
+            <Button
+              size="sm"
+              variant="secondary"
+              className="text-chart-2"
+              onClick={() => approveLeave.mutate({ id: leave._id, status: "approved" })}
+              data-testid={`button-approve-leave-${leave._id}`}
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              className="text-destructive"
+              onClick={() => approveLeave.mutate({ id: leave._id, status: "rejected" })}
+              data-testid={`button-reject-leave-${leave._id}`}
+            >
+              <XCircle className="w-3.5 h-3.5 mr-1" /> Reject
+            </Button>
+          </div>
+        )}
+        {(!showActions || isOrgAdmin) && canCancel(leave, showActions) && (
+          <div className="flex justify-end">
+            <ConfirmDeleteButton
+              title={showActions ? "Revoke this leave?" : "Cancel this leave request?"}
+              description="It stays in the history as cancelled, and its days go back into the balance."
+              onConfirm={() => cancelLeave.mutate(leave._id)}
+              disabled={cancelLeave.isPending}
+              testId={`button-cancel-leave-${leave._id}`}
+              label={showActions ? "Revoke" : "Cancel leave"}
+            />
+          </div>
+        )}
+        {showActions && isOrgAdmin && (
+          <div className="flex gap-1 justify-end">
+            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setEditing(leave)} data-testid={`button-edit-leave-${leave._id}`}>
+              <Pencil className="w-3.5 h-3.5 mr-1" />Edit
+            </Button>
+            <ConfirmDeleteButton
+              title="Delete this leave request?"
+              description="It is removed for good, whatever its status. The audit log keeps a note of it."
+              onConfirm={() => deleteLeave.mutate(leave._id)}
+              disabled={deleteLeave.isPending}
+              testId={`button-delete-leave-${leave._id}`}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="page-title" data-testid="text-leaves-title">Leave Requests</h1>
+          <p className="text-muted-foreground">Manage leave requests and balances</p>
+        </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-request-leave">
+              <Plus className="w-4 h-4 mr-2" />
+              Request Leave
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Request Leave</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={(e) => { e.preventDefault(); createLeave.mutate(form); }} className="space-y-4">
+              <div>
+                <Label>Leave Type</Label>
+                <Select value={form.leaveType} onValueChange={(v) => setForm({ ...form, leaveType: v })}>
+                  <SelectTrigger data-testid="select-leave-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="sick">Sick Leave</SelectItem>
+                    <SelectItem value="casual">Casual Leave</SelectItem>
+                    <SelectItem value="personal">Personal Leave</SelectItem>
+                    <SelectItem value="vacation">Vacation</SelectItem>
+                    <SelectItem value="paid">Paid Leave</SelectItem>
+                    <SelectItem value="unpaid">Unpaid Leave</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Start Date</Label><Input type="date" data-testid="input-leave-start" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required /></div>
+                <div><Label>End Date</Label><Input type="date" data-testid="input-leave-end" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required /></div>
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-md border bg-card">
+                <div>
+                  <p className="text-sm font-medium">Half-Day Leave</p>
+                  <p className="text-xs text-muted-foreground">Request only half a day off</p>
+                </div>
+                <Switch
+                  checked={form.isHalfDay}
+                  onCheckedChange={(v) => setForm({ ...form, isHalfDay: v })}
+                  data-testid="switch-half-day"
+                />
+              </div>
+              {form.isHalfDay && (
+                <div>
+                  <Label>Half-Day Period</Label>
+                  <Select value={form.halfDayPeriod} onValueChange={(v) => setForm({ ...form, halfDayPeriod: v as "morning" | "afternoon" })}>
+                    <SelectTrigger data-testid="select-half-day-period"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="morning">Morning</SelectItem>
+                      <SelectItem value="afternoon">Afternoon</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div>
+                <Label>Reason</Label>
+                <Textarea data-testid="input-leave-reason" value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} required className="resize-none" rows={3} />
+              </div>
+              <Button type="submit" className="w-full" disabled={createLeave.isPending} data-testid="button-submit-leave">
+                {createLeave.isPending ? "Submitting..." : "Submit Request"}
+              </Button>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <LeaveBalanceCards year={year} />
+
+      <Tabs defaultValue={isAdmin ? "team" : "my"}>
+        <TabsList>
+          <TabsTrigger value="my" data-testid="tab-my-leaves">My Leaves</TabsTrigger>
+          <TabsTrigger value="away" data-testid="tab-who-is-away">Who's Away</TabsTrigger>
+          {isAdmin && <TabsTrigger value="team" data-testid="tab-team-leaves">Team Leaves</TabsTrigger>}
+          {canSummarize && <TabsTrigger value="summary" data-testid="tab-leave-summary">Summary</TabsTrigger>}
+          {isOrgAdmin && <TabsTrigger value="policies" data-testid="tab-leave-policies">Policies</TabsTrigger>}
+        </TabsList>
+
+        <TabsContent value="away"><WhoIsAway /></TabsContent>
+        {canSummarize && <TabsContent value="summary"><LeaveSummary year={year} onYear={setYear} /></TabsContent>}
+        {isOrgAdmin && <TabsContent value="policies"><LeavePolicies year={year} /></TabsContent>}
+
+        <TabsContent value="my">
+          {myLoading ? (
+            <Skeleton className="h-48 w-full" />
+          ) : (myLeaves || []).length === 0 ? (
+            <Card>
+              <CardContent>
+                <EmptyState icon={CalendarOff} title="No leave requests yet" description="Use Apply for Leave to request time off; its status shows here." />
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {(myLeaves || []).map((l: any) => renderLeaveCard(l, false))}
+            </div>
+          )}
+        </TabsContent>
+
+        {isAdmin && (
+          <TabsContent value="team">
+            {orgLoading ? (
+              <Skeleton className="h-48 w-full" />
+            ) : (orgLeaves || []).length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <CalendarOff className="w-10 h-10 text-muted-foreground mx-auto mb-2" />
+                  <p className="text-muted-foreground">No team leave requests</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {(orgLeaves || []).map((l: any) => renderLeaveCard(l, true))}
+              </div>
+            )}
+          </TabsContent>
+        )}
+      </Tabs>
+      {editing && <EditLeaveDialog leave={editing} token={token!} types={leaveTypeLabels} onClose={() => setEditing(null)} />}
+    </div>
+  );
+}

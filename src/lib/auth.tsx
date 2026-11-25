@@ -1,0 +1,224 @@
+import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { apiFetch, postJson, safeJson } from "./api";
+import { queryClient } from "./queryClient";
+
+// Dev-only logging so auth details (roles, impersonation targets) never reach
+// production consoles.
+const debug = (...args: unknown[]) => {
+  if (import.meta.env.DEV) console.log(...args);
+};
+
+interface User {
+  _id: string;
+  username: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  organizationId?: any;
+  isActive: boolean;
+  mustChangePassword?: boolean;
+  locationRestrictionEnabled?: boolean | null;
+  toolAccess?: { tickets?: boolean; crm?: boolean; crmTransfer?: boolean; mcq?: boolean; timeTracking?: boolean };
+  // Decided by the server (utils/permissions.js): what this person may open.
+  permissions?: Record<string, boolean>;
+}
+
+interface AuthContextType {
+  user: User | null;
+  token: string | null;
+  login: (credential: string, password: string, isEmail?: boolean, extras?: Record<string, string | number>) => Promise<void>;
+  logout: () => void;
+  refreshUser: () => Promise<void>;
+  // Adopts a replacement token (issued after a password change, which ends
+  // every other session) without logging the user out.
+  replaceToken: (newToken: string) => void;
+  isLoading: boolean;
+  mustChangePassword: boolean;
+  clearMustChangePassword: () => void;
+  isImpersonating: boolean;
+  impersonate: (userId: string) => Promise<void>;
+  exitImpersonation: () => void;
+  impersonatedOrgName: string | null;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(() => localStorage.getItem("token"));
+  const [isLoading, setIsLoading] = useState(true);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
+  const [isImpersonating, setIsImpersonating] = useState(() => !!localStorage.getItem("superadminToken"));
+  const [impersonatedOrgName, setImpersonatedOrgName] = useState<string | null>(() => localStorage.getItem("impersonatedOrgName"));
+
+  const fetchUser = useCallback(async (authToken: string) => {
+    try {
+      debug("[auth] fetchUser →", "/api/auth/me");
+      const res = await apiFetch("/api/auth/me", {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      debug("[auth] fetchUser status:", res.status);
+      if (res.ok) {
+        const userData = await safeJson<User>(res);
+        setUser(userData);
+        if (userData.mustChangePassword) {
+          setMustChangePassword(true);
+        }
+      } else if (res.status === 401 || res.status === 403) {
+        // The server rejected this token: the session is over.
+        debug("[auth] token rejected — clearing session");
+        localStorage.removeItem("token");
+        setToken(null);
+        setUser(null);
+      } else {
+        // A server hiccup (5xx) must not sign the user out.
+        console.error("[auth] fetchUser unexpected status:", res.status);
+      }
+    } catch (err) {
+      // Offline or unreachable: keep the stored token so the app recovers on reconnect.
+      console.error("[auth] fetchUser error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      fetchUser(token);
+    } else {
+      setIsLoading(false);
+    }
+  }, [token, fetchUser]);
+
+  // Features and permissions change on the server (the Super Admin's switches, the admin's
+  // Tool Access), so the signed-in user is re-read whenever the tab comes back into view
+  // and every minute while it is open. The server refuses switched-off features at once either way.
+  useEffect(() => {
+    if (!token) return;
+    const onVisible = () => { if (document.visibilityState === "visible") fetchUser(token); };
+    document.addEventListener("visibilitychange", onVisible);
+    const timer = window.setInterval(onVisible, 60_000);
+    return () => { document.removeEventListener("visibilitychange", onVisible); window.clearInterval(timer); };
+  }, [token, fetchUser]);
+
+  const login = async (credential: string, password: string, isEmail?: boolean, extras?: Record<string, string | number>) => {
+    const body = isEmail
+      ? { email: credential, password, ...extras }
+      : { username: credential, password, ...extras };
+
+    debug("[auth] login → POST /api/auth/login");
+
+    let data: any;
+    try {
+      data = await postJson("/api/auth/login", body);
+    } catch (err: any) {
+      console.error("[auth] login failed:", err);
+      throw new Error(err.message || "Login failed");
+    }
+
+    debug("[auth] login response:", { token: !!data.token, role: data.user?.role });
+
+    if (!data.token) {
+      throw new Error(data.message || "Login failed");
+    }
+
+    localStorage.setItem("token", data.token);
+    queryClient.clear();
+    setToken(data.token);
+    setUser(data.user);
+    // The login response carries the organization as a bare id; /me returns it with its
+    // features and type, which decide what the sidebar shows.
+    await fetchUser(data.token);
+    if (data.user.mustChangePassword) {
+      setMustChangePassword(true);
+    } else {
+      window.history.replaceState(null, "", "/");
+    }
+  };
+
+  const logout = () => {
+    // Records when this session ended; signing out locally never waits for it.
+    const current = localStorage.getItem("token");
+    if (current && !localStorage.getItem("superadminToken")) {
+      apiFetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${current}` } }).catch(() => {});
+    }
+    localStorage.removeItem("token");
+    localStorage.removeItem("superadminToken");
+    localStorage.removeItem("impersonatedOrgName");
+    localStorage.removeItem("app_theme");
+    setToken(null);
+    setUser(null);
+    setMustChangePassword(false);
+    setIsImpersonating(false);
+    setImpersonatedOrgName(null);
+    // Cached responses belong to this user, so the next one in this browser must not see them.
+    queryClient.clear();
+    window.history.replaceState(null, "", "/");
+  };
+
+  const replaceToken = useCallback((newToken: string) => {
+    localStorage.setItem("token", newToken);
+    setToken(newToken);
+  }, []);
+
+  const clearMustChangePassword = () => {
+    setMustChangePassword(false);
+  };
+
+  const impersonate = async (userId: string) => {
+    if (!token) return;
+    debug("[auth] impersonate →", userId);
+    let res: Response;
+    try {
+      res = await apiFetch(`/api/auth/impersonate/${userId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch (err) {
+      console.error("[auth] impersonate network error:", err);
+      throw new Error("Network error during impersonation");
+    }
+    const data = await safeJson(res);
+    if (!res.ok) {
+      throw new Error(data.message || "Impersonation failed");
+    }
+    const orgName = data.user?.organizationId?.name || "Organization";
+    localStorage.setItem("superadminToken", token);
+    localStorage.setItem("impersonatedOrgName", orgName);
+    localStorage.setItem("token", data.token);
+    setIsImpersonating(true);
+    setImpersonatedOrgName(orgName);
+    setToken(data.token);
+    setUser(data.user);
+    window.history.replaceState(null, "", "/");
+  };
+
+  const exitImpersonation = () => {
+    const savedToken = localStorage.getItem("superadminToken");
+    if (savedToken) {
+      localStorage.setItem("token", savedToken);
+      localStorage.removeItem("superadminToken");
+      localStorage.removeItem("impersonatedOrgName");
+      window.location.href = "/organizations";
+    }
+  };
+
+  const refreshUser = useCallback(async () => {
+    if (token) await fetchUser(token);
+  }, [token, fetchUser]);
+
+  return (
+    <AuthContext.Provider value={{ user, token, login, logout, refreshUser, replaceToken, isLoading, mustChangePassword, clearMustChangePassword, isImpersonating, impersonate, exitImpersonation, impersonatedOrgName }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+}
