@@ -403,7 +403,7 @@ export default function McqTestDetailPage() {
           <DialogHeader><DialogTitle>Download PDF</DialogTitle><DialogDescription>Choose a template for your test PDF background, or download without one.</DialogDescription></DialogHeader>
           <div className="space-y-3">
             <Button variant="outline" className="w-full justify-start gap-3 h-auto py-3" onClick={() => handleDownloadPDF(null)} disabled={downloading} data-testid="button-download-no-template">
-              <div className="w-10 h-14 rounded border border-border bg-white flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-muted-foreground" /></div>
+              <div className="w-10 h-14 rounded border border-border bg-card flex items-center justify-center shrink-0"><FileText className="w-5 h-5 text-muted-foreground" /></div>
               <div className="text-left"><p className="font-medium text-sm">No Template</p><p className="text-xs text-muted-foreground">Plain white background</p></div>
             </Button>
             {templates.map((t) => (

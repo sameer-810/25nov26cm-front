@@ -66,6 +66,7 @@ const McqFallback = () => (
 );
 import ForcePasswordChange from "@/components/force-password-change";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { applyBrandingCss, saveBranding, useBranding } from "@/lib/branding";
 import { RemoteImage } from "@/components/remote-image";
 
@@ -458,6 +459,7 @@ function AppLayout() {
               {canUseTickets(user) && (
                 <Suspense fallback={null}><GlobalTicketSearch /></Suspense>
               )}
+              <ThemeToggle />
               <NotificationBell />
               <div className="flex items-center gap-2 pl-2 border-l max-md:border-white/30">
                 <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary max-md:bg-white/20 max-md:text-primary-foreground flex items-center justify-center text-xs font-semibold">

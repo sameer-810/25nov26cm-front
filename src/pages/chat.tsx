@@ -532,8 +532,8 @@ export default function ChatPage() {
                           <div
                             className={`rounded-md p-2.5 ${
                               own
-                                ? "bg-black text-white"
-                                : "bg-white text-black border"
+                                ? "bg-foreground text-background"
+                                : "bg-card text-card-foreground border"
                             }`}
                           >
                             {isEditing ? (

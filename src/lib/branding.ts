@@ -77,34 +77,37 @@ function hexToHsl(hex: string): string {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+const BRANDING_STYLE_ID = "branding-vars";
+
+// Branding goes in a <style> tag rather than inline styles so dark mode can still win:
+// button colours apply in both themes, sidebar and accent colours only in light mode.
+function writeBrandingStyle(css: string) {
+  let tag = document.getElementById(BRANDING_STYLE_ID);
+  if (!tag) {
+    tag = document.createElement("style");
+    tag.id = BRANDING_STYLE_ID;
+    document.head.appendChild(tag);
+  }
+  tag.textContent = css;
+}
+
 export function applyBrandingCss(theme: Branding) {
-  const el = document.documentElement;
   const btn = theme.buttonColor || theme.primaryColor;
-  if (theme.primaryColor) el.style.setProperty("--theme-primary", theme.primaryColor);
-  if (theme.sidebarColor) {
-    el.style.setProperty("--theme-sidebar", theme.sidebarColor);
-    el.style.setProperty("--sidebar", hexToHsl(theme.sidebarColor));
-  }
-  if (theme.accentColor) {
-    el.style.setProperty("--theme-accent", theme.accentColor);
-    el.style.setProperty("--accent", hexToHsl(theme.accentColor));
-  }
+  const both: string[] = [];
+  const lightOnly: string[] = [];
   if (btn) {
-    el.style.setProperty("--theme-button", btn);
-    el.style.setProperty("--primary", hexToHsl(btn));
-    el.style.setProperty("--ring", hexToHsl(btn));
-    el.style.setProperty("--sidebar-primary", hexToHsl(btn));
-    el.style.setProperty("--sidebar-ring", hexToHsl(btn));
+    const hsl = hexToHsl(btn);
+    both.push(`--primary:${hsl}`, `--ring:${hsl}`, `--sidebar-primary:${hsl}`, `--sidebar-ring:${hsl}`);
   }
+  if (theme.sidebarColor) lightOnly.push(`--sidebar:${hexToHsl(theme.sidebarColor)}`);
+  if (theme.accentColor) lightOnly.push(`--accent:${hexToHsl(theme.accentColor)}`);
+  writeBrandingStyle(`:root,.dark{${both.join(";")}}:root:not(.dark){${lightOnly.join(";")}}`);
   setFavicon(theme.logoType !== "text" && theme.logoUrl ? assetUrl(theme.logoUrl) : DEFAULT_FAVICON);
   window.dispatchEvent(new CustomEvent("brandingUpdated"));
 }
 
 export function resetBrandingCss() {
-  const el = document.documentElement;
-  ["--theme-primary", "--theme-sidebar", "--theme-accent", "--theme-button",
-   "--primary", "--ring", "--sidebar", "--accent", "--sidebar-primary", "--sidebar-ring"]
-    .forEach((v) => el.style.removeProperty(v));
+  writeBrandingStyle("");
   setFavicon(DEFAULT_FAVICON);
   window.dispatchEvent(new CustomEvent("brandingUpdated"));
 }
