@@ -334,7 +334,7 @@ export default function SalarySetupPage() {
                       <Badge variant="outline" className="text-xs capitalize">{f.type}</Badge>
                     </td>
                     <td className="px-4 py-2.5">
-                      {f.required ? <Badge className="text-xs bg-blue-100 text-blue-700 hover:bg-blue-100">Yes</Badge> : <span className="text-muted-foreground text-xs">No</span>}
+                      {f.required ? <Badge className="text-xs bg-chart-1/10 text-chart-1 hover:bg-chart-1/10">Yes</Badge> : <span className="text-muted-foreground text-xs">No</span>}
                     </td>
                     <td className="px-4 py-2.5">
                       <div className="flex gap-1 justify-end">

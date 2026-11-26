@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, Trophy, Clock, Target } from "lucide-react";
 import { useMcqApi } from "@/mcq/lib/api";
 import { pctOf, scoreVariant, type McqAssignment, type McqAttemptSummary } from "@/mcq/lib/types";
-import StatCard from "@/mcq/components/StatCard";
+import { StatCard } from "@/components/stat-card";
 
 export default function TakerDashboard() {
   const api = useMcqApi();

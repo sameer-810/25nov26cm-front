@@ -20,11 +20,11 @@ import { EmptyState } from "@/components/ui/states";
 const CLAIM_TYPES = ["travel", "mobile", "food", "accommodation", "equipment", "medical", "other"];
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
-  pending_manager: { label: "Pending Manager", className: "bg-amber-100 text-amber-800" },
-  approved_manager: { label: "Approved by Manager", className: "bg-blue-100 text-blue-800" },
-  forwarded: { label: "Forwarded", className: "bg-purple-100 text-purple-800" },
-  approved_final: { label: "Approved", className: "bg-green-100 text-green-800" },
-  rejected: { label: "Rejected", className: "bg-red-100 text-red-800" },
+  pending_manager: { label: "Pending Manager", className: "bg-chart-4/10 text-chart-4" },
+  approved_manager: { label: "Approved by Manager", className: "bg-chart-1/10 text-chart-1" },
+  forwarded: { label: "Forwarded", className: "bg-chart-3/10 text-chart-3" },
+  approved_final: { label: "Approved", className: "bg-chart-2/10 text-chart-2" },
+  rejected: { label: "Rejected", className: "bg-destructive/10 text-destructive" },
 };
 
 export default function ReimbursementsPage() {

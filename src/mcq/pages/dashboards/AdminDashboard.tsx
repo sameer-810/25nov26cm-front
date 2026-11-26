@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Users, GraduationCap, ClipboardList, FileText, TrendingUp, BookOpen } from "lucide-react";
 import { useMcqApi } from "@/mcq/lib/api";
 import type { McqStats } from "@/mcq/lib/types";
-import StatCard from "@/mcq/components/StatCard";
+import { StatCard } from "@/components/stat-card";
 import StudentReportsTable from "@/mcq/components/StudentReportsTable";
 import type { Period } from "@/mcq/components/PeriodSelect";
 

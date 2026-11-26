@@ -8,8 +8,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Building2, Users, GraduationCap, Briefcase, TrendingUp } from "lucide-react";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import { chartColor } from "@/lib/chart-colors";
 
-const COLORS = ["hsl(217, 91%, 35%)", "hsl(142, 76%, 28%)", "hsl(271, 81%, 32%)", "hsl(37, 91%, 35%)"];
 
 export default function SuperAdminDashboard() {
   const { token } = useAuth();
@@ -210,7 +210,7 @@ export default function SuperAdminDashboard() {
                     dataKey="value"
                   >
                     {pieData.map((_, index) => (
-                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      <Cell key={`cell-${index}`} fill={chartColor(index)} />
                     ))}
                   </Pie>
                   <Tooltip />
@@ -220,7 +220,7 @@ export default function SuperAdminDashboard() {
             <div className="flex justify-center gap-6 mt-2">
               {pieData.map((entry, index) => (
                 <div key={entry.name} className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: chartColor(index) }} />
                   <span className="text-sm text-muted-foreground">{entry.name} ({entry.value})</span>
                 </div>
               ))}

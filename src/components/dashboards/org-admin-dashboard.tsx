@@ -8,13 +8,37 @@ import { localDateString } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, UserCheck, UserX, Clock, CalendarOff, TrendingUp, AlertCircle, Download, FileSpreadsheet, FileText, ChevronDown, CalendarCheck } from "lucide-react";
-import { EmptyState } from "@/components/ui/states";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
+import { Users, UserCheck, UserX, Clock, CalendarOff, AlertCircle, Download, FileSpreadsheet, FileText, ChevronDown, ChevronRight, Sparkles } from "lucide-react";
+import { ErrorState } from "@/components/ui/states";
 import { Button } from "@/components/ui/button";
+import { StatCard } from "@/components/stat-card";
+import { AttendanceTrendChart, type AttendancePoint } from "./org-admin/attendance-trend-chart";
+import { AttendanceDistributionChart } from "./org-admin/attendance-distribution-chart";
+
+interface DashboardMember {
+  _id: string;
+  firstName: string;
+  lastName: string;
+}
+
+interface OrgDashboardData {
+  totalMembers: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  pendingCount: number;
+  pendingLeaves: number;
+  organization?: { name?: string };
+  roleBreakdown: { _id: string; count: number }[];
+  chartData: AttendancePoint[];
+  startDate: string;
+  endDate: string;
+  allMembers: DashboardMember[];
+}
 
 const statusBadge: Record<string, string> = {
   present: "bg-chart-2/10 text-chart-2",
@@ -28,6 +52,13 @@ const periodLabels: Record<string, string> = {
   weekly: "This Week",
   monthly: "This Month",
   yearly: "This Year",
+};
+
+const chartTitles: Record<string, string> = {
+  daily: "Today's Attendance",
+  weekly: "Weekly Attendance Trend",
+  monthly: "Daily Attendance Trend",
+  yearly: "Monthly Attendance Trend",
 };
 
 export default function OrgAdminDashboard() {
@@ -50,7 +81,7 @@ export default function OrgAdminDashboard() {
     );
   }
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery<OrgDashboardData>({
     queryKey: ["/api/dashboard/org", period, selectedMember],
     queryFn: async () => {
       let url = `/api/dashboard/org?period=${period}`;
@@ -97,53 +128,64 @@ export default function OrgAdminDashboard() {
 
   if (isLoading) {
     return (
-      <div className="p-6 space-y-6">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Card key={i}><CardContent className="p-6"><Skeleton className="h-16 w-full" /></CardContent></Card>
+      <div className="p-4 md:p-6 space-y-6">
+        <Skeleton className="h-10 w-72" />
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Card key={i}><CardContent className="p-5"><Skeleton className="h-24 w-full" /></CardContent></Card>
           ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+          <Skeleton className="h-80 lg:col-span-2 rounded-xl" />
+          <Skeleton className="h-80 rounded-xl" />
         </div>
       </div>
     );
   }
 
-  const attendanceRate = data?.totalMembers > 0
-    ? Math.round(((data?.presentCount || 0) / Math.max(1, (data?.presentCount || 0) + (data?.absentCount || 0) + (data?.lateCount || 0))) * 100)
-    : 0;
+  if (isError || !data) {
+    return <div className="p-4 md:p-6"><ErrorState what="the dashboard" onRetry={() => refetch()} /></div>;
+  }
 
+  // presentCount already includes late arrivals and half days.
+  const presentCount = data.presentCount || 0;
+  const lateCount = data.lateCount || 0;
+  const absentCount = data.absentCount || 0;
+  const marked = presentCount + absentCount;
+  const attendanceRate = marked > 0 ? Math.round((presentCount / marked) * 100) : 0;
   const memberLabel = orgType === "academy" ? "Students" : "Employees";
-
-  const chartTitle = period === "yearly" ? "Monthly Attendance Trend" :
-    period === "monthly" ? "Daily Attendance Trend" :
-    period === "weekly" ? "Weekly Attendance Trend" : "Today's Attendance";
+  const totalMembers = data.totalMembers || 0;
+  const roleBreakdown = data.roleBreakdown || [];
+  const pendingCount = data.pendingCount || 0;
+  const pendingLeaves = data.pendingLeaves || 0;
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-6">
+      <div className="flex flex-col lg:flex-row items-start lg:items-end justify-between gap-4">
         <div>
           <h1 className="page-title" data-testid="text-org-dashboard-title">
-            {data?.organization?.name || "Organization"} Dashboard
+            {data.organization?.name || "Organization"} Dashboard
           </h1>
           <p className="text-muted-foreground">
             {pLabel}'s overview and attendance summary
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {data?.allMembers && data.allMembers.length > 0 && (
+          {data.allMembers?.length > 0 && (
             <Select value={selectedMember || "all"} onValueChange={(v) => setSelectedMember(v === "all" ? "" : v)}>
-              <SelectTrigger className="w-[180px]" data-testid="select-member-filter">
+              <SelectTrigger className="w-[180px]" data-testid="select-member-filter" aria-label={`Filter ${memberLabel}`}>
                 <SelectValue placeholder={`Filter ${memberLabel}`} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All {memberLabel}</SelectItem>
-                {(data.allMembers || []).map((m: any) => (
+                {data.allMembers.map((m) => (
                   <SelectItem key={m._id} value={m._id}>{m.firstName} {m.lastName}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
           )}
           <Select value={period} onValueChange={setPeriod}>
-            <SelectTrigger className="w-[130px]" data-testid="select-period-filter">
+            <SelectTrigger className="w-[130px]" data-testid="select-period-filter" aria-label="Period">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -153,178 +195,129 @@ export default function OrgAdminDashboard() {
               <SelectItem value="yearly">Yearly</SelectItem>
             </SelectContent>
           </Select>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" data-testid="button-download-reports">
+                <Download className="w-4 h-4 mr-2" />
+                Reports
+                <ChevronDown className="w-4 h-4 ml-2" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => downloadReport("xlsx", "team")} data-testid="button-download-team-excel">
+                <FileSpreadsheet className="w-4 h-4 mr-2" />
+                Team Excel
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => downloadReport("docx", "team")} data-testid="button-download-team-word">
+                <FileText className="w-4 h-4 mr-2" />
+                Team Word
+              </DropdownMenuItem>
+              {selectedMember && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => downloadReport("xlsx", "user")} data-testid="button-download-member-excel">
+                    <FileSpreadsheet className="w-4 h-4 mr-2" />
+                    Member Excel
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => downloadReport("docx", "user")} data-testid="button-download-member-word">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Member Word
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
-      <div className="flex justify-end">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" data-testid="button-download-reports">
-              <Download className="w-4 h-4 mr-2" />
-              Download Reports
-              <ChevronDown className="w-4 h-4 ml-2" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => downloadReport("xlsx", "team")} data-testid="button-download-team-excel">
-              <FileSpreadsheet className="w-4 h-4 mr-2" />
-              Team Excel
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => downloadReport("docx", "team")} data-testid="button-download-team-word">
-              <FileText className="w-4 h-4 mr-2" />
-              Team Word
-            </DropdownMenuItem>
-            {selectedMember && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => downloadReport("xlsx", "user")} data-testid="button-download-member-excel">
-                  <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  Member Excel
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => downloadReport("docx", "user")} data-testid="button-download-member-word">
-                  <FileText className="w-4 h-4 mr-2" />
-                  Member Word
-                </DropdownMenuItem>
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+        <StatCard label="Total Members" value={totalMembers} icon={<Users />} tone="1" onClick={() => openDrilldown("total")} testId="text-total-members" />
+        <StatCard label={`Present ${pLabel}`} value={presentCount} icon={<UserCheck />} tone="2" onClick={() => openDrilldown("present")} testId="text-present-count" />
+        <StatCard label={`Absent ${pLabel}`} value={absentCount} icon={<UserX />} tone="destructive" onClick={() => openDrilldown("absent")} testId="text-absent-count" />
+        <StatCard label={`Late ${pLabel}`} value={lateCount} icon={<Clock />} tone="4" onClick={() => openDrilldown("late")} testId="text-late-count" />
+        <StatCard label="Pending Leaves" value={pendingLeaves} icon={<CalendarOff />} tone="3" onClick={() => openDrilldown("pending_leaves")} testId="text-pending-leaves" />
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 md:gap-4">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openDrilldown("total")} data-testid="card-total-members">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-1">
-              <div>
-                <p className="text-xs text-muted-foreground">Total Members</p>
-                <p className="text-2xl font-bold mt-1" data-testid="text-total-members">{data?.totalMembers || 0}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Users className="w-5 h-5 text-primary" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openDrilldown("present")} data-testid="card-present">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-1">
-              <div>
-                <p className="text-xs text-muted-foreground">Present {pLabel}</p>
-                <p className="text-2xl font-bold mt-1 text-chart-2">{data?.presentCount || 0}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-chart-2/10 flex items-center justify-center">
-                <UserCheck className="w-5 h-5 text-chart-2" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openDrilldown("absent")} data-testid="card-absent">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-1">
-              <div>
-                <p className="text-xs text-muted-foreground">Absent {pLabel}</p>
-                <p className="text-2xl font-bold mt-1 text-destructive">{data?.absentCount || 0}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">
-                <UserX className="w-5 h-5 text-destructive" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openDrilldown("late")} data-testid="card-late">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-1">
-              <div>
-                <p className="text-xs text-muted-foreground">Late {pLabel}</p>
-                <p className="text-2xl font-bold mt-1 text-chart-4">{data?.lateCount || 0}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-chart-4/10 flex items-center justify-center">
-                <Clock className="w-5 h-5 text-chart-4" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => openDrilldown("pending_leaves")} data-testid="card-pending-leaves">
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between gap-1">
-              <div>
-                <p className="text-xs text-muted-foreground">Pending Leaves</p>
-                <p className="text-2xl font-bold mt-1 text-chart-3">{data?.pendingLeaves || 0}</p>
-              </div>
-              <div className="w-10 h-10 rounded-full bg-chart-3/10 flex items-center justify-center">
-                <CalendarOff className="w-5 h-5 text-chart-3" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-lg">{chartTitle}</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider">{chartTitles[period]}</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="h-72">
-              {(data?.chartData || []).some((d: { present?: number; late?: number; absent?: number }) => (d.present || 0) + (d.late || 0) + (d.absent || 0) > 0) ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={data?.chartData || []}>
-                    <XAxis dataKey="day" tick={{ fontSize: 12 }} />
-                    <YAxis tick={{ fontSize: 12 }} />
-                    <Tooltip />
-                    <Legend />
-                    <Bar dataKey="present" name="Present" fill="hsl(142, 76%, 28%)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="late" name="Late" fill="hsl(37, 91%, 35%)" radius={[4, 4, 0, 0]} />
-                    <Bar dataKey="absent" name="Absent" fill="hsl(0, 84%, 35%)" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-              ) : (
-                <div className="flex items-center justify-center h-full">
-                  <EmptyState icon={CalendarCheck} title="No attendance recorded yet" description="Check-ins for this period appear here as people mark attendance." testId="state-empty-attendance-chart" />
-                </div>
-              )}
+            <div className="h-64 md:h-72">
+              <AttendanceTrendChart data={data.chartData || []} />
             </div>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Team Breakdown</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider">Attendance Rate</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="text-center p-4 rounded-md bg-primary/5">
-                <TrendingUp className="w-8 h-8 text-primary mx-auto mb-2" />
-                <p className="text-3xl font-bold">{attendanceRate}%</p>
-                <p className="text-sm text-muted-foreground">{pLabel}'s Attendance Rate</p>
-              </div>
+            <AttendanceDistributionChart
+              onTime={Math.max(0, presentCount - lateCount)}
+              late={lateCount}
+              absent={absentCount}
+              rate={attendanceRate}
+              periodLabel={pLabel}
+            />
+          </CardContent>
+        </Card>
+      </div>
 
-              {(data?.pendingCount || 0) > 0 && (
-                <div className="flex items-center justify-between p-2.5 rounded-md bg-chart-3/10 cursor-pointer" onClick={() => openDrilldown("pending")}>
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-chart-3" />
-                    <span className="text-sm text-chart-3 font-medium">Pending Confirmations</span>
-                  </div>
-                  <Badge variant="secondary" className="bg-chart-3/20 text-chart-3">{data.pendingCount}</Badge>
-                </div>
-              )}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider">Team Composition</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {roleBreakdown.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No members yet</p>
+            ) : (
+              <ul className="space-y-4">
+                {roleBreakdown.map((rb) => {
+                  const share = totalMembers > 0 ? Math.round((rb.count / totalMembers) * 100) : 0;
+                  return (
+                    <li key={rb._id}>
+                      <div className="flex items-center justify-between text-sm mb-1.5">
+                        <span className="capitalize">{rb._id.replace(/_/g, " ")}s</span>
+                        <span className="stat-figure text-muted-foreground">{rb.count} · {share}%</span>
+                      </div>
+                      <Progress value={share} className="h-2" aria-label={`${rb._id}: ${share}% of members`} />
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
 
-              <div className="space-y-2">
-                {(data?.roleBreakdown || []).map((rb: any) => (
-                  <div key={rb._id} className="flex items-center justify-between gap-2 p-2.5 rounded-md bg-muted/30">
-                    <span className="text-sm capitalize">{rb._id}s</span>
-                    <Badge variant="secondary">{rb.count}</Badge>
-                  </div>
-                ))}
-                {(!data?.roleBreakdown || data.roleBreakdown.length === 0) && (
-                  <p className="text-sm text-muted-foreground text-center py-4">No members yet</p>
+        <Card className="bg-gradient-to-br from-primary/10 via-card to-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold uppercase tracking-wider text-primary flex items-center gap-2">
+              <Sparkles className="w-4 h-4" /> Needs Attention
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingCount === 0 && pendingLeaves === 0 ? (
+              <p className="text-sm text-muted-foreground py-4">All caught up. Nothing is waiting for your review.</p>
+            ) : (
+              <>
+                {pendingCount > 0 && (
+                  <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => openDrilldown("pending")}>
+                    <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 text-chart-3" /> Attendance awaiting confirmation</span>
+                    <span className="flex items-center gap-1"><Badge variant="secondary">{pendingCount}</Badge><ChevronRight className="w-4 h-4" /></span>
+                  </Button>
                 )}
-              </div>
-            </div>
+                {pendingLeaves > 0 && (
+                  <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => openDrilldown("pending_leaves")}>
+                    <span className="flex items-center gap-2"><CalendarOff className="w-4 h-4 text-chart-3" /> Leave requests to review</span>
+                    <span className="flex items-center gap-1"><Badge variant="secondary">{pendingLeaves}</Badge><ChevronRight className="w-4 h-4" /></span>
+                  </Button>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
       </div>

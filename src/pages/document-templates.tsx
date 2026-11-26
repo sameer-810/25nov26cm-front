@@ -65,11 +65,11 @@ const DOCTYPE_LABELS: Record<string, string> = {
 };
 
 const DOCTYPE_BADGE_COLORS: Record<string, string> = {
-  salary_slip: "bg-blue-100 text-blue-700",
-  offer_letter: "bg-green-100 text-green-700",
-  onboarding_letter: "bg-yellow-100 text-yellow-700",
-  relieving_letter: "bg-red-100 text-red-700",
-  certificate: "bg-purple-100 text-purple-700",
+  salary_slip: "bg-chart-1/10 text-chart-1",
+  offer_letter: "bg-chart-2/10 text-chart-2",
+  onboarding_letter: "bg-chart-4/10 text-chart-4",
+  relieving_letter: "bg-destructive/10 text-destructive",
+  certificate: "bg-chart-3/10 text-chart-3",
 };
 
 const TEMPLATE_TYPE_ICON: Record<string, any> = {
@@ -211,7 +211,7 @@ export default function DocumentTemplatesPage() {
                     <div className="min-w-0 flex-1">
                       <CardTitle className="text-sm font-semibold leading-tight truncate">{t.title}</CardTitle>
                       <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DOCTYPE_BADGE_COLORS[t.documentType] || "bg-gray-100 text-gray-700"}`}>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DOCTYPE_BADGE_COLORS[t.documentType] || "bg-muted text-muted-foreground"}`}>
                           {getDocTypeLabel(t.documentType)}
                         </span>
                         <span className="text-xs text-muted-foreground uppercase font-mono">.{t.templateType}</span>

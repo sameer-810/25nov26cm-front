@@ -187,7 +187,7 @@ export default function McqExternalTestPage() {
     const pct = result.avgPercentage;
     return screen(
       <>
-        <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center ${pct >= 70 ? "bg-green-100" : pct >= 40 ? "bg-yellow-100" : "bg-red-100"}`}><Trophy className={`w-10 h-10 ${pct >= 70 ? "text-green-600" : pct >= 40 ? "text-yellow-600" : "text-red-600"}`} /></div>
+        <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center ${pct >= 70 ? "bg-chart-2/10" : pct >= 40 ? "bg-chart-4/10" : "bg-destructive/10"}`}><Trophy className={`w-10 h-10 ${pct >= 70 ? "text-chart-2" : pct >= 40 ? "text-chart-4" : "text-destructive"}`} /></div>
         <div><h2 className="text-2xl font-bold text-foreground" data-testid="text-result-title">Test Completed!</h2><p className="text-muted-foreground text-sm mt-1">{result.testTitle}</p></div>
         <div className="py-2"><p className="text-5xl font-bold text-foreground" data-testid="text-result-score">{result.score}</p><p className="text-muted-foreground text-sm mt-1">out of {result.totalMarks} marks</p></div>
         <div className="h-3 bg-muted rounded-full overflow-hidden"><div className={`h-full rounded-full ${pct >= 70 ? "bg-green-500" : pct >= 40 ? "bg-yellow-500" : "bg-red-500"}`} style={{ width: `${pct}%` }} /></div>

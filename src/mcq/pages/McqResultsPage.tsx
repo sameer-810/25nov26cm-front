@@ -14,7 +14,7 @@ import { BarChart3, Trophy, Target, TrendingUp, Search, User, Eye, Trash2 } from
 import { useMcqApi } from "@/mcq/lib/api";
 import { isMcqStaff } from "@/mcq/lib/roles";
 import { pctOf, scoreVariant, type McqAttemptSummary } from "@/mcq/lib/types";
-import StatCard from "@/mcq/components/StatCard";
+import { StatCard } from "@/components/stat-card";
 import PeriodSelect, { periodLabels, type Period } from "@/mcq/components/PeriodSelect";
 
 function StaffResults() {

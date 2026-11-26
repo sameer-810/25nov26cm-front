@@ -23,8 +23,8 @@ import { LectureButton, LectureRow, useLectures, type TimeLectureRow } from "@/c
 import TimeSummaryCards from "@/components/time/TimeSummaryCards";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import { EmptyState } from "@/components/ui/states";
+import { chartColor } from "@/lib/chart-colors";
 
-const COLORS = ["hsl(217, 91%, 45%)", "hsl(142, 76%, 36%)", "hsl(271, 81%, 46%)", "hsl(37, 91%, 45%)", "hsl(0, 84%, 45%)", "hsl(180, 70%, 35%)", "hsl(330, 70%, 45%)", "hsl(50, 90%, 40%)"];
 
 function formatDuration(minutes: number) {
   const h = Math.floor(minutes / 60);
@@ -565,7 +565,7 @@ export default function TimeTrackingPage() {
                         dataKey="value"
                       >
                         {report.taskReport.map((_: any, i: number) => (
-                          <Cell key={`cell-${i}`} fill={COLORS[i % COLORS.length]} />
+                          <Cell key={`cell-${i}`} fill={chartColor(i)} />
                         ))}
                       </Pie>
                       <Tooltip formatter={(value: number) => formatDuration(value)} />
@@ -594,7 +594,7 @@ export default function TimeTrackingPage() {
                     <div className="h-2 bg-muted rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full transition-all"
-                        style={{ width: `${t.percentage}%`, backgroundColor: COLORS[i % COLORS.length] }}
+                        style={{ width: `${t.percentage}%`, backgroundColor: chartColor(i) }}
                       />
                     </div>
                   </div>
@@ -621,7 +621,7 @@ export default function TimeTrackingPage() {
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip formatter={(value: number) => `${value} hrs`} />
-                      <Bar dataKey="hours" name="Hours" fill="hsl(217, 91%, 45%)" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="hours" name="Hours" fill="hsl(var(--chart-1))" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

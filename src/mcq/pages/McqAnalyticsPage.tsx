@@ -13,7 +13,7 @@ import { useMcqApi } from "@/mcq/lib/api";
 import { useDownload } from "@/mcq/lib/useDownload";
 import { isMcqAdmin } from "@/mcq/lib/roles";
 import { pctOf, type McqStudentDetail, type McqTeacherPerformance } from "@/mcq/lib/types";
-import StatCard from "@/mcq/components/StatCard";
+import { StatCard } from "@/components/stat-card";
 import StudentReportsTable, { useStudentPerformance } from "@/mcq/components/StudentReportsTable";
 import { periodLabels, type Period } from "@/mcq/components/PeriodSelect";
 

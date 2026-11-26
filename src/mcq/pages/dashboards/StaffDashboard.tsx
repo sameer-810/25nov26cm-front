@@ -10,7 +10,7 @@ import { GraduationCap, ClipboardList, FileCheck, BarChart3, BookOpen, FileText,
 import { useMcqApi } from "@/mcq/lib/api";
 import { MCQ_TAKER_ROLES } from "@/mcq/lib/roles";
 import { pctOf, type McqAttemptSummary, type McqQuestion, type McqTest, type OrgUser } from "@/mcq/lib/types";
-import StatCard from "@/mcq/components/StatCard";
+import { StatCard } from "@/components/stat-card";
 import StudentReportsTable from "@/mcq/components/StudentReportsTable";
 import type { Period } from "@/mcq/components/PeriodSelect";
 
