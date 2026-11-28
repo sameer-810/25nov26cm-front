@@ -13,6 +13,8 @@ export interface AccessItem {
   // False for a module this person's role (or the organization) can't have; shown switched off with `reason`.
   available?: boolean;
   reason?: string;
+  // Edit Member: whether the person's roles give them this. A switch that differs is their own exception.
+  inherited?: boolean;
 }
 
 interface Props {
@@ -20,11 +22,22 @@ interface Props {
   value: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  onReset?: () => void;
+}
+
+// Where a switch's state comes from, when the roles' contribution is known.
+function SourceBadge({ item, on }: { item: AccessItem; on: boolean }) {
+  if (item.inherited === undefined) {
+    return item.byRole ? <Badge variant="secondary" className="ml-1 text-[10px] align-middle">role default</Badge> : null;
+  }
+  if (on && !item.inherited) return <Badge className="ml-1 text-[10px] align-middle bg-chart-2/15 text-chart-2 hover:bg-chart-2/15">Allowed</Badge>;
+  if (!on && item.inherited) return <Badge className="ml-1 text-[10px] align-middle bg-destructive/15 text-destructive hover:bg-destructive/15">Denied</Badge>;
+  return item.inherited ? <Badge variant="secondary" className="ml-1 text-[10px] align-middle">from roles</Badge> : null;
 }
 
 // The six module switches, each with the permissions inside it. A person gets exactly what is
 // ticked here; a permission counts only while its module (and anything it requires) is on.
-export default function AccessSwitches({ items, value, onChange, disabled }: Props) {
+export default function AccessSwitches({ items, value, onChange, disabled, onReset }: Props) {
   const on = new Set(value);
   const usable = items.filter((i) => i.available !== false);
   const set = (key: string, next: boolean) => {
@@ -49,7 +62,8 @@ export default function AccessSwitches({ items, value, onChange, disabled }: Pro
     <div className="space-y-3" data-testid="access-switches">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <p className="text-xs text-muted-foreground" data-testid="text-access-count">{effective} feature{effective === 1 ? "" : "s"} switched on</p>
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
+          {onReset && <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={onReset} data-testid="button-access-reset">Reset to Role Defaults</Button>}
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onChange(usable.map((i) => i.key))} data-testid="button-access-all">Select All</Button>
           <Button type="button" size="sm" variant="outline" disabled={disabled} onClick={() => onChange([])} data-testid="button-access-none">Clear</Button>
         </div>
@@ -61,7 +75,7 @@ export default function AccessSwitches({ items, value, onChange, disabled }: Pro
           <div key={m.key} role="group" aria-label={m.label} className={`rounded-md border ${unavailable ? "opacity-60" : ""}`} data-testid={`access-module-${m.key}`}>
             <div className="flex items-start justify-between gap-3 p-3 bg-muted/40">
               <label htmlFor={`access-${m.key}`} className="min-w-0">
-                <span className="block text-sm font-semibold">{m.label}</span>
+                <span className="block text-sm font-semibold">{m.label}{!unavailable && <SourceBadge item={m} on={on.has(m.key)} />}</span>
                 <span className="block text-xs text-muted-foreground">{unavailable ? m.reason || "Not available" : m.hint}</span>
               </label>
               <Switch id={`access-${m.key}`} checked={!unavailable && on.has(m.key)} disabled={disabled || unavailable} onCheckedChange={(next) => set(m.key, next)} aria-label={m.label} data-testid={`switch-access-${m.key}`} />
@@ -74,7 +88,7 @@ export default function AccessSwitches({ items, value, onChange, disabled }: Pro
                     <div key={c.key} className={`flex items-start justify-between gap-3 rounded-md border p-2 ${blocked ? "opacity-50" : ""}`}>
                       <label htmlFor={`access-${c.key}`} className="text-sm min-w-0">
                         <span className="font-medium">{c.label}</span>
-                        {c.byRole && <Badge variant="secondary" className="ml-1 text-[10px] align-middle">role default</Badge>}
+                        <SourceBadge item={c} on={on.has(c.key)} />
                         <span className="block text-xs text-muted-foreground">{c.hint}</span>
                       </label>
                       <Switch id={`access-${c.key}`} checked={on.has(c.key) && !blocked} disabled={disabled || blocked} onCheckedChange={(next) => set(c.key, next)} aria-label={c.label} data-testid={`switch-access-${c.key}`} />

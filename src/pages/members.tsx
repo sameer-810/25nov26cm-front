@@ -21,6 +21,8 @@ import { Plus, Search, Users, Pencil, Trash2, Eye, EyeOff, Phone, GraduationCap,
 import { usePersonAccess } from "@/components/members/usePersonAccess";
 import { EmptyState, ErrorState } from "@/components/ui/states";
 import AccessSwitches, { type AccessItem } from "@/components/members/AccessSwitches";
+import { MemberRolesField, type AssignableRole } from "@/components/members/MemberRolesField";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import ImportMembersDialog from "@/components/members/ImportMembersDialog";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { Link } from "wouter";
@@ -75,12 +77,16 @@ export default function MembersPage() {
     studentWhatsapp: "", parentWhatsapp: "",
     assignedSchedules: [] as string[],
     access: [] as string[],
+    roleIds: [] as string[],
   });
+  // Switches are sent only once the admin changes them; until then the roles decide.
+  const [accessTouched, setAccessTouched] = useState(false);
 
   const [editForm, setEditForm] = useState({
     firstName: "", lastName: "", email: "", phone: "", education: "", role: "", password: "", biometricId: "", managerId: "",
     studentWhatsapp: "", parentWhatsapp: "",
     assignedSchedules: [] as string[],
+    roleIds: [] as string[],
   });
 
   const { data: members, isLoading, isError: membersError, refetch: refetchMembers } = useQuery({
@@ -129,6 +135,11 @@ export default function MembersPage() {
             baseRole: r.baseRole,
           }))
       : fallbackRoles;
+  // Custom roles a member can hold on top of their main role.
+  const assignableRoles: AssignableRole[] = ((rolesData || []) as Array<{ _id: string; roleName: string; isSystem?: boolean; permissionKeys?: string[] }>)
+    .filter((r) => !r.isSystem)
+    .map((r) => ({ value: String(r._id), label: r.roleName, permissionKeys: r.permissionKeys || [] }));
+  const grantsOf = (ids: string[]) => new Set(assignableRoles.filter((r) => ids.includes(r.value)).flatMap((r) => r.permissionKeys));
   // Member is built in and only admins may create one.
   const availableRoles = canAddMembers && !listedRoles.some((r) => r.roleName === "member")
     ? [...listedRoles, { value: "system-member", label: "Member", roleName: "member" }]
@@ -161,8 +172,9 @@ export default function MembersPage() {
         payload.roleId = data.role;
         delete payload.role;
       }
-      // Only an admin chooses switches; for anyone else the server applies the role's defaults.
-      if (user?.role !== "org_admin" || !catalog) delete payload.access;
+      // Only an admin chooses roles and switches; otherwise the server applies the role's defaults.
+      if (user?.role !== "org_admin" || !catalog || !accessTouched) delete payload.access;
+      if (user?.role !== "org_admin" || payload.roleIds.length === 0) delete payload.roleIds;
       const res = await apiFetch("/api/users", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
@@ -175,7 +187,8 @@ export default function MembersPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
       queryClient.invalidateQueries({ queryKey: ["/api/policy"] });
       setCreateOpen(false);
-      setForm({ firstName: "", lastName: "", email: "", emailDomain: "", phone: "", education: "", username: "", biometricId: "", role: availableRoles[0]?.value || "system-employee", studentWhatsapp: "", parentWhatsapp: "", assignedSchedules: [], access: catalog?.defaults || [] });
+      setAccessTouched(false);
+      setForm({ firstName: "", lastName: "", email: "", emailDomain: "", phone: "", education: "", username: "", biometricId: "", role: availableRoles[0]?.value || "system-employee", studentWhatsapp: "", parentWhatsapp: "", assignedSchedules: [], access: catalog?.defaults || [], roleIds: [] });
       setTempPwdState({ open: true, password: data.tempPassword, username: data.user?.username || "" });
     },
     onError: (err: Error) => {
@@ -205,6 +218,7 @@ export default function MembersPage() {
   const editsAccess = user?.role === "org_admin" && editOpen && !!selectedMember && selectedMember.role !== "org_admin";
   const editAccess = usePersonAccess(editsAccess ? selectedMember._id : null);
   const roleChanged = !!selectedMember && editForm.role !== (selectedMember.roleId ? String(selectedMember.roleId) : `system-${selectedMember.role}`);
+  const rolesChanged = !!selectedMember && [...(editForm.roleIds || [])].sort().join() !== (selectedMember.roleIds || []).map(String).sort().join();
 
   const updateUser = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
@@ -327,6 +341,7 @@ export default function MembersPage() {
       phone: member.phone || "",
       education: member.education || "",
       role: roleValue,
+      roleIds: (member.roleIds || []).map(String),
       password: "",
       biometricId: member.biometricId || "",
       managerId: member.managerId ? String(member.managerId._id || member.managerId) : "",
@@ -393,9 +408,14 @@ export default function MembersPage() {
     },
     enabled: !!token && user?.role === "org_admin" && createOpen,
   });
+  const createGrantKey = form.roleIds.join();
   useEffect(() => {
-    if (catalog) setForm((prev) => ({ ...prev, access: catalog.defaults }));
-  }, [catalog]);
+    if (!catalog || accessTouched) return;
+    const grants = grantsOf(form.roleIds);
+    const offered = catalog.permissions.filter((p) => p.available !== false).map((p) => p.key);
+    setForm((prev) => ({ ...prev, access: offered.filter((k) => catalog.defaults.includes(k) || grants.has(k)) }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catalog, createGrantKey, accessTouched]);
 
   const { data: managers } = useQuery({
     queryKey: ["/api/users", "managers"],
@@ -610,12 +630,21 @@ export default function MembersPage() {
                 </Select>
               </div>
 
+              {user?.role === "org_admin" && createRole !== "org_admin" && assignableRoles.length > 0 && (
+                <MemberRolesField roles={assignableRoles} value={form.roleIds} onChange={(roleIds) => setForm({ ...form, roleIds })} />
+              )}
+
               {user?.role === "org_admin" && catalog && createRole !== "org_admin" && (
-                <div className="space-y-2 p-3 rounded-md border" data-testid="member-access">
-                  <p className="text-sm font-medium">Access Management</p>
-                  <p className="text-xs text-muted-foreground">The person gets exactly what is switched on here. The role's usual features start on.</p>
-                  <AccessSwitches items={catalog.permissions} value={form.access} onChange={(access) => setForm({ ...form, access })} />
-                </div>
+                <Collapsible className="rounded-md border" data-testid="member-access">
+                  <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium">
+                    <span>Advanced Permissions</span>
+                    <span className="text-xs font-normal text-muted-foreground">{accessTouched ? "Customized" : "From roles"}</span>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="space-y-2 border-t p-3">
+                    <p className="text-xs text-muted-foreground">Starts with what the roles grant. Change a switch only for an exception.</p>
+                    <AccessSwitches items={catalog.permissions} value={form.access} onChange={(access) => { setAccessTouched(true); setForm({ ...form, access }); }} />
+                  </CollapsibleContent>
+                </Collapsible>
               )}
 
               {isStudentOrEmployee(form.role) && (
@@ -915,8 +944,10 @@ export default function MembersPage() {
                 data.roleId = data.role;
                 delete data.role;
               }
-              // The switches belong to the current role; after a role change they are set on the next edit.
-              if (editsAccess && !roleChanged && editAccess.dirty) data.access = editAccess.value;
+              // Roles are sent only when they changed; the switches belong to the current roles, so after
+              // a role change they are recalculated and adjusted on the next edit.
+              if (user?.role !== "org_admin" || !rolesChanged) delete data.roleIds;
+              if (editsAccess && !roleChanged && !rolesChanged && editAccess.dirty) data.access = editAccess.value;
               updateUser.mutate({ id: selectedMember._id, data });
             }
           }} className="space-y-4">
@@ -1021,20 +1052,30 @@ export default function MembersPage() {
                 <p className="text-xs text-muted-foreground mt-1">Their manager sees and supervises their leads and tickets.</p>
               </div>
             )}
+            {editsAccess && assignableRoles.length > 0 && (
+              <MemberRolesField roles={assignableRoles} value={editForm.roleIds || []} onChange={(roleIds) => setEditForm({ ...editForm, roleIds })} disabled={updateUser.isPending} />
+            )}
             {editsAccess && (
-              <div className="space-y-2 p-3 rounded-md border" data-testid="edit-access-management">
-                <p className="text-sm font-medium">Access Management</p>
-                <p className="text-xs text-muted-foreground">This person can open only the modules switched on here. Saved with Update Member.</p>
-                {roleChanged ? (
-                  <p className="text-xs text-muted-foreground" data-testid="text-access-after-role">Saving the new role switches on that role's usual modules. Reopen Edit afterwards to change them.</p>
-                ) : editAccess.loading ? (
-                  <Skeleton className="h-32 w-full" />
-                ) : editAccess.failed ? (
-                  <p className="text-sm text-destructive">Couldn't load this person's access. Close and open Edit again.</p>
-                ) : (
-                  <AccessSwitches items={editAccess.items} value={editAccess.value} onChange={editAccess.setValue} disabled={updateUser.isPending} />
-                )}
-              </div>
+              <Collapsible className="rounded-md border" data-testid="edit-access-management">
+                <CollapsibleTrigger className="flex w-full items-center justify-between gap-2 p-3 text-left text-sm font-medium">
+                  <span>Advanced Permissions</span>
+                  <span className="text-xs font-normal text-muted-foreground">{editAccess.exceptions ? `${editAccess.exceptions} personal exception(s)` : "From roles"}</span>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-2 border-t p-3">
+                  {roleChanged || rolesChanged ? (
+                    <p className="text-xs text-muted-foreground" data-testid="text-access-after-role">Permissions are recalculated from the new roles when you save. Reopen Edit afterwards to adjust them.</p>
+                  ) : editAccess.loading ? (
+                    <Skeleton className="h-32 w-full" />
+                  ) : editAccess.failed ? (
+                    <p className="text-sm text-destructive">Couldn't load this person's access. Close and open Edit again.</p>
+                  ) : (
+                    <>
+                      <p className="text-xs text-muted-foreground">Switches marked Allowed or Denied are this person's own exceptions; the rest come from their roles.</p>
+                      <AccessSwitches items={editAccess.items} value={editAccess.value} onChange={editAccess.setValue} onReset={editAccess.reset} disabled={updateUser.isPending} />
+                    </>
+                  )}
+                </CollapsibleContent>
+              </Collapsible>
             )}
             <div>
               <Label>New Password (leave empty to keep current)</Label>

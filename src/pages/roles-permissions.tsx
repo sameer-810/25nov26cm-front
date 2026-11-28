@@ -14,7 +14,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Pencil, Trash2, Shield, ShieldCheck } from "lucide-react";
+import { Plus, Pencil, Trash2, Shield, ShieldCheck, Users } from "lucide-react";
+import { PermissionBuilder, type CatalogItem } from "@/components/roles/PermissionBuilder";
 
 // One permission a role starts with, from the server's permission list (utils/permissions.js).
 interface Permission {
@@ -31,10 +32,16 @@ interface Role {
   isSystem?: boolean;
   baseRole?: string;
   permissions: Permission[];
+  // Custom roles: the permission keys the role grants, and how many members hold it.
+  permissionKeys?: string[];
+  userCount?: number;
   createdAt: string;
 }
 
-interface RoleForm { roleName: string; description: string; baseRole: string }
+interface RoleForm { roleName: string; description: string; baseRole: string; permissions: string[] }
+
+const NO_BASE = "none";
+const EMPTY_FORM: RoleForm = { roleName: "", description: "", baseRole: "", permissions: [] };
 
 // A custom role is a job title on top of one of these; access follows the built-in role.
 const BASE_ROLES: Record<string, string[]> = { academy: ["teacher", "student", "manager", "employee", "member"], company: ["manager", "employee", "member"] };
@@ -43,28 +50,29 @@ const BASE_LABELS: Record<string, string> = { teacher: "Teacher", student: "Stud
 function BaseRoleSelect({ value, onChange, orgType }: { value: string; onChange: (v: string) => void; orgType: string }) {
   return (
     <div className="space-y-1.5">
-      <Label>Works as</Label>
-      <Select value={value || undefined} onValueChange={onChange}>
-        <SelectTrigger data-testid="select-role-base"><SelectValue placeholder="Choose a built-in role" /></SelectTrigger>
+      <Label>Use as a job title <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
+      <Select value={value || NO_BASE} onValueChange={(v) => onChange(v === NO_BASE ? "" : v)}>
+        <SelectTrigger data-testid="select-role-base"><SelectValue /></SelectTrigger>
         <SelectContent>
-          {(BASE_ROLES[orgType] || BASE_ROLES.company).map((r) => <SelectItem key={r} value={r}>{BASE_LABELS[r]}</SelectItem>)}
+          <SelectItem value={NO_BASE}>No, permissions only</SelectItem>
+          {(BASE_ROLES[orgType] || BASE_ROLES.company).map((r) => <SelectItem key={r} value={r}>Works as {BASE_LABELS[r]}</SelectItem>)}
         </SelectContent>
       </Select>
-      <p className="text-xs text-muted-foreground">People with this role get the pages, data and default permissions of the built-in role you choose.</p>
+      <p className="text-xs text-muted-foreground">Choose a built-in role to let this role be picked as someone's main role. Leave it for a role added on top of others.</p>
     </div>
   );
 }
 
-function RoleDialog({ title, open, form, setForm, orgType, pending, submitLabel, onSubmit, onClose }: {
-  title: string; open: boolean; form: RoleForm; setForm: (f: RoleForm) => void; orgType: string;
+function RoleDialog({ title, open, form, setForm, orgType, catalog, pending, submitLabel, onSubmit, onClose }: {
+  title: string; open: boolean; form: RoleForm; setForm: (f: RoleForm) => void; orgType: string; catalog: CatalogItem[] | undefined;
   pending: boolean; submitLabel: string; onSubmit: () => void; onClose: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>A custom role is a job title. What its people can open follows the built-in role it works as.</DialogDescription>
+          <DialogDescription>Choose what this role grants. Members can hold several roles and get everything their roles grant, combined.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -75,11 +83,19 @@ function RoleDialog({ title, open, form, setForm, orgType, pending, submitLabel,
             <Label htmlFor="role-description">Description <span className="text-muted-foreground font-normal text-xs">(optional)</span></Label>
             <Input id="role-description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Briefly describe this role" data-testid="input-role-description" />
           </div>
+          <div className="space-y-1.5">
+            <Label>Permissions</Label>
+            {catalog ? (
+              <PermissionBuilder catalog={catalog} value={form.permissions} onChange={(permissions) => setForm({ ...form, permissions })} disabled={pending} />
+            ) : (
+              <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-14" />)}</div>
+            )}
+          </div>
           <BaseRoleSelect value={form.baseRole} onChange={(baseRole) => setForm({ ...form, baseRole })} orgType={orgType} />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={onSubmit} disabled={pending || !form.roleName.trim() || !form.baseRole} data-testid="button-submit-role">
+          <Button onClick={onSubmit} disabled={pending || !form.roleName.trim()} data-testid="button-submit-role">
             {pending ? "Saving..." : submitLabel}
           </Button>
         </DialogFooter>
@@ -99,18 +115,18 @@ function RoleDetail({ role }: { role: Role }) {
         <div className="min-w-0">
           <h2 className="font-semibold truncate">{role.roleName}</h2>
           <p className="text-sm text-muted-foreground">
-            {role.isSystem ? role.description : role.baseRole ? `Works as ${BASE_LABELS[role.baseRole]}` : "Choose which built-in role it works as"}
+            {role.isSystem ? role.description : `${role.baseRole ? `Works as ${BASE_LABELS[role.baseRole]} · ` : ""}${role.userCount || 0} member(s)`}
           </p>
         </div>
       </div>
       {role.permissions.length === 0 ? (
         <p className="text-sm text-muted-foreground py-6 text-center">
-          {role.isSystem ? "This role starts with no permissions." : "Edit the role and choose what it works as to give it permissions."}
+          {role.isSystem ? "This role starts with no permissions." : "This role grants nothing yet. Edit it to choose its permissions."}
         </p>
       ) : (
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">
-            {everything ? "Admins have every permission." : `Starts with these ${role.permissions.length} permissions.`} An admin can add or remove them for one person on Edit Member.
+            {everything ? "Admins have every permission." : role.isSystem ? `Starts with these ${role.permissions.length} permissions.` : `Grants these ${role.permissions.length} permissions to everyone holding it.`} An admin can add or remove them for one person on Edit Member.
           </p>
           {Object.entries(groups).map(([group, perms]) => (
             <div key={group} className="border rounded-lg p-3">
@@ -135,7 +151,7 @@ export default function RolesPermissionsPage() {
   const [editRole, setEditRole] = useState<Role | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [form, setForm] = useState<RoleForm>({ roleName: "", description: "", baseRole: "" });
+  const [form, setForm] = useState<RoleForm>(EMPTY_FORM);
 
   const { data: roles = [], isLoading: loadingRoles, error } = useQuery<Role[]>({
     queryKey: ["/api/roles"],
@@ -145,6 +161,17 @@ export default function RolesPermissionsPage() {
       return res.json();
     },
     enabled: !!token,
+  });
+  const dialogOpen = createOpen || !!editRole;
+  const { data: catalog } = useQuery<CatalogItem[]>({
+    queryKey: ["/api/roles/catalog"],
+    queryFn: async () => {
+      const res = await apiFetch("/api/roles/catalog", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error("Failed to load permissions");
+      return res.json();
+    },
+    enabled: !!token && dialogOpen,
+    staleTime: 5 * 60 * 1000,
   });
   // Read from the list, so the detail always shows what the server computed after a save.
   const selectedRole = roles.find((r) => r._id === selectedId) || null;
@@ -187,15 +214,19 @@ export default function RolesPermissionsPage() {
     onError: failed,
   });
 
-  const openCreate = () => { setForm({ roleName: "", description: "", baseRole: "" }); setCreateOpen(true); };
-  const openEdit = (role: Role) => { setForm({ roleName: role.roleName, description: role.description, baseRole: role.baseRole || "" }); setEditRole(role); };
+  const openCreate = () => { setForm(EMPTY_FORM); setCreateOpen(true); };
+  const openEdit = (role: Role) => {
+    setForm({ roleName: role.roleName, description: role.description, baseRole: role.baseRole || "", permissions: role.permissionKeys || [] });
+    setEditRole(role);
+  };
+  const deleteRole = roles.find((r) => r._id === deleteId);
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="page-title" data-testid="text-page-title">Roles & Permissions</h1>
-          <p className="text-muted-foreground text-sm mt-1">What each role starts with, and custom roles for your own job titles</p>
+          <p className="text-muted-foreground text-sm mt-1">Build roles once and give members as many as they need; their permissions combine</p>
         </div>
         <Button onClick={openCreate} data-testid="button-create-role"><Plus className="w-4 h-4 mr-2" /> New Role</Button>
       </div>
@@ -226,8 +257,8 @@ export default function RolesPermissionsPage() {
                     </div>
                     {role.description && <p className="text-xs text-muted-foreground truncate mt-0.5">{role.description}</p>}
                     <p className="text-xs text-muted-foreground mt-1">
-                      {!role.isSystem && (role.baseRole ? `Works as ${BASE_LABELS[role.baseRole]} · ` : "Choose what it works as · ")}
                       {role.permissions.length} permissions
+                      {!role.isSystem && <span className="inline-flex items-center gap-1 ml-1.5"><Users className="w-3 h-3" aria-hidden />{role.userCount || 0}</span>}
                     </p>
                   </div>
                   {!role.isSystem && (
@@ -259,12 +290,12 @@ export default function RolesPermissionsPage() {
       </div>
 
       <RoleDialog
-        title="Create New Role" open={createOpen} form={form} setForm={setForm} orgType={orgType}
+        title="Create New Role" open={createOpen} form={form} setForm={setForm} orgType={orgType} catalog={catalog}
         pending={createMutation.isPending} submitLabel="Create Role"
         onSubmit={() => createMutation.mutate(form)} onClose={() => setCreateOpen(false)}
       />
       <RoleDialog
-        title="Edit Role" open={!!editRole} form={form} setForm={setForm} orgType={orgType}
+        title="Edit Role" open={!!editRole} form={form} setForm={setForm} orgType={orgType} catalog={catalog}
         pending={updateMutation.isPending} submitLabel="Save Changes"
         onSubmit={() => editRole && updateMutation.mutate({ id: editRole._id, data: form })} onClose={() => setEditRole(null)}
       />
@@ -273,11 +304,15 @@ export default function RolesPermissionsPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Role?</AlertDialogTitle>
-            <AlertDialogDescription>The role is deleted. People who had it keep working as its built-in role.</AlertDialogDescription>
+            <AlertDialogDescription>
+              {deleteRole?.userCount
+                ? `${deleteRole.userCount} member(s) still have this role. Remove it from them on Edit Member first.`
+                : "The role is deleted. This can't be undone."}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteId && deleteMutation.mutate(deleteId)} data-testid="button-confirm-delete-role">
+            <AlertDialogAction disabled={!!deleteRole?.userCount} className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => deleteId && deleteMutation.mutate(deleteId)} data-testid="button-confirm-delete-role">
               Delete
             </AlertDialogAction>
           </AlertDialogFooter>
