@@ -18,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { StatCard } from "@/components/stat-card";
 import { AttendanceTrendChart, type AttendancePoint } from "./org-admin/attendance-trend-chart";
 import { AttendanceDistributionChart } from "./org-admin/attendance-distribution-chart";
+import { AcademyOverview } from "./org-admin/academy-overview";
+import { featureOn } from "@/academy/lib/academy";
 
 interface DashboardMember {
   _id: string;
@@ -265,6 +267,8 @@ export default function OrgAdminDashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {orgType === "academy" && featureOn(user, "lectures") && <AcademyOverview />}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         <Card>

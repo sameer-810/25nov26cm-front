@@ -5,7 +5,11 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { BookOpen, Trash2 } from "lucide-react";
+import { Archive, BookOpen, Pencil, Plus, Trash2 } from "lucide-react";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { CourseDialog } from "@/academy/components/CourseDialog";
 import { useMcqApi } from "@/mcq/lib/api";
 import { Picker, ListState } from "@/academy/components/common";
 import CourseImage from "@/academy/components/CourseImage";
@@ -61,27 +65,80 @@ function Topics({ course }: { course: SyllabusCourse }) {
 export default function SyllabusPage() {
   const { user } = useAuth();
   const api = useMcqApi();
+  const { toast } = useToast();
   const [courseId, setCourseId] = useState("");
+  const [dialog, setDialog] = useState<"create" | "edit" | null>(null);
+  const [archiving, setArchiving] = useState(false);
   const { data: courses = [], isLoading, error } = useQuery({ queryKey: ["/api/courses", "syllabus"], queryFn: () => api.get<SyllabusCourse[]>("/api/courses/syllabus") });
   const course = courses.find((c) => c._id === courseId) || (courses.length === 1 ? courses[0] : undefined);
 
   const role = user?.role;
+  // The server allows the same: admins and teachers create; editing follows canEdit; only admins archive.
+  const canCreate = role === "org_admin" || role === "teacher";
+  const archive = useMutation({
+    mutationFn: (id: string) => api.delete(`/api/courses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/courses"] });
+      setCourseId("");
+      setArchiving(false);
+      toast({ title: "Course archived" });
+    },
+    onError: (err: Error) => toast({ title: "Not archived", description: err.message, variant: "destructive" }),
+  });
   const subtitle = role === "student" ? "The syllabus of the courses you are taking"
     : role === "teacher" ? "The syllabus of the courses you teach. A course's topics are its total portion; lectures that name a topic complete it for each student present."
       : "A course's topics are its total portion. Lectures that name a topic complete it for each student present.";
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
-      <div>
-        <h1 className="page-title">Syllabus</h1>
-        <p className="text-sm text-muted-foreground">{subtitle}</p>
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="page-title">Syllabus</h1>
+          <p className="text-sm text-muted-foreground">{subtitle}</p>
+        </div>
+        {canCreate && <Button onClick={() => setDialog("create")} data-testid="button-new-course"><Plus className="w-4 h-4 mr-2" />New Course</Button>}
       </div>
       <ListState isLoading={isLoading} error={error} isEmpty={courses.length === 0} emptyText="No courses to show yet" icon={BookOpen}>
-        <div className="max-w-sm">
-          <Picker label="Course" value={course?._id || ""} onChange={setCourseId} options={courses.map((c) => ({ value: c._id, label: c.title }))} testId="select-syllabus-course" />
+        <div className="flex items-end gap-2 flex-wrap">
+          <div className="w-full max-w-sm">
+            <Picker label="Course" value={course?._id || ""} onChange={setCourseId} options={courses.map((c) => ({ value: c._id, label: c.title }))} testId="select-syllabus-course" />
+          </div>
+          {course?.canEdit && (
+            <Button variant="outline" onClick={() => setDialog("edit")} data-testid="button-edit-course"><Pencil className="w-4 h-4 mr-2" />Edit Course</Button>
+          )}
+          {course && role === "org_admin" && (
+            <Button variant="outline" className="text-destructive hover:text-destructive" onClick={() => setArchiving(true)} data-testid="button-archive-course"><Archive className="w-4 h-4 mr-2" />Archive</Button>
+          )}
         </div>
+        {course && (course.duration || course.description) && (
+          <p className="text-sm text-muted-foreground max-w-2xl">
+            {course.duration && <span className="font-medium text-foreground">{course.duration}</span>}
+            {course.duration && course.description && " · "}
+            {course.description}
+          </p>
+        )}
         {course ? <Topics key={course._id} course={course} /> : <p className="text-sm text-muted-foreground">Choose a course to see its topics.</p>}
       </ListState>
+
+      <CourseDialog
+        open={!!dialog}
+        course={dialog === "edit" ? course : undefined}
+        onClose={() => setDialog(null)}
+        onSaved={(saved) => { setDialog(null); setCourseId(saved._id); }}
+      />
+
+      <AlertDialog open={archiving} onOpenChange={(o) => { if (!o) setArchiving(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Archive {course?.title}?</AlertDialogTitle>
+            <AlertDialogDescription>It disappears from the Syllabus and from new batches. Existing batches, lectures and student progress stay.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => course && archive.mutate(course._id)} data-testid="button-confirm-archive-course">Archive</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

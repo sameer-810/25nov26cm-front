@@ -131,7 +131,7 @@ export const INVOICE_STATUSES = ["pending", "partial", "paid", "overdue"] as con
 export const PAYMENT_METHODS = ["cash", "upi", "bank_transfer", "card", "cheque", "other"] as const;
 export const LECTURE_STATUSES = ["scheduled", "completed", "cancelled"] as const;
 
-export interface Course { _id: string; title: string; imageUrl?: string }
+export interface Course { _id: string; title: string; description?: string; duration?: string; imageUrl?: string }
 export type BatchStatus = "upcoming" | "active" | "completed" | "cancelled";
 export interface Batch {
   _id: string;
