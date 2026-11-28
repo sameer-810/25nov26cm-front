@@ -1,0 +1,146 @@
+name: Build apps
+
+# Builds the portal's apps from this repository:
+#   Android  .apk  (expo-app/, Ubuntu)
+#   iOS      .ipa  (expo-app/, macOS; unsigned, see below)
+#   Windows  .exe  (desktop/, Windows installer)
+# All three open the portal website, so a website change needs no new app. Download the files from
+# the run's page: Actions -> Build apps -> the run -> Artifacts.
+#
+# Settings (GitHub -> Settings -> Secrets and variables -> Actions):
+#   Variable  WEB_URL                     optional; the site the apps open (default below)
+#   Secret    ANDROID_KEYSTORE_BASE64     optional; your .jks file as base64. Without it the APK uses
+#   Secret    ANDROID_KEYSTORE_PASSWORD     Expo's shared debug key, which installs fine but must be
+#   Secret    ANDROID_KEY_ALIAS             replaced by your own key before the Play Store.
+#   Secret    ANDROID_KEY_PASSWORD
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "expo-app/**"
+      - "desktop/**"
+      - ".github/workflows/build-apps.yml"
+
+concurrency:
+  group: build-apps-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  WEB_URL: ${{ vars.WEB_URL || 'https://portals.nfskills.com' }}
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: expo-app
+    env:
+      EXPO_PUBLIC_WEB_URL: ${{ vars.WEB_URL || 'https://portals.nfskills.com' }}
+      APP_VERSION_CODE: ${{ github.run_number }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: expo-app/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Generate the Android project
+        run: npx expo prebuild --platform android --clean --no-install
+      - name: Use your signing key
+        if: env.ANDROID_KEYSTORE_BASE64 != ''
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.jks"
+          echo "ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+      - name: Set version code and signing
+        run: node scripts/configure-release-signing.cjs
+      - name: Build release APK
+        working-directory: expo-app/android
+        run: ./gradlew assembleRelease --no-daemon
+      - run: mv android/app/build/outputs/apk/release/app-release.apk "nfskills-portal-${{ github.run_number }}.apk"
+      - uses: actions/upload-artifact@v5
+        with:
+          name: android-apk-${{ github.run_number }}
+          path: expo-app/nfskills-portal-*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    # Unsigned: installs only after re-signing (Sideloadly or AltStore with an Apple ID). A directly
+    # installable or App Store build needs an Apple Developer account and signing through EAS.
+    runs-on: macos-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: expo-app
+    env:
+      EXPO_PUBLIC_WEB_URL: ${{ vars.WEB_URL || 'https://portals.nfskills.com' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: expo-app/package-lock.json
+      - run: npm ci
+      - name: Generate the iOS project
+        run: npx expo prebuild --platform ios --clean
+      - name: Build unsigned IPA
+        working-directory: expo-app/ios
+        run: |
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          xcodebuild archive \
+            -workspace "$WORKSPACE" -scheme "${WORKSPACE%.xcworkspace}" \
+            -configuration Release -sdk iphoneos -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/app.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$RUNNER_TEMP"/app.xcarchive/Products/Applications/*.app "$RUNNER_TEMP/ipa/Payload/"
+          (cd "$RUNNER_TEMP/ipa" && zip -qry "$GITHUB_WORKSPACE/expo-app/nfskills-portal-unsigned-${{ github.run_number }}.ipa" Payload)
+      - uses: actions/upload-artifact@v5
+        with:
+          name: ios-ipa-unsigned-${{ github.run_number }}
+          path: expo-app/nfskills-portal-unsigned-*.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+      - name: Set the portal address and version
+        run: npm pkg set "portalUrl=$WEB_URL" "version=1.0.${{ github.run_number }}"
+      - name: Build Windows installer
+        run: npx electron-builder --win nsis --publish never
+      - uses: actions/upload-artifact@v5
+        with:
+          name: windows-exe-${{ github.run_number }}
+          path: desktop/dist/nfskills-portal-setup-*.exe
+          if-no-files-found: error
+          retention-days: 30

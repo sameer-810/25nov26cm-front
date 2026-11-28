@@ -11,10 +11,10 @@
     "doctor": "expo-doctor"
   },
   "dependencies": {
-    "expo": "~57.0.26",
+    "expo": "~57.0.34",
     "expo-file-system": "~57.0.7",
-    "expo-sharing": "~57.0.26",
-    "expo-splash-screen": "~57.0.11",
+    "expo-sharing": "~57.0.27",
+    "expo-splash-screen": "~57.0.12",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
     "react-native": "0.86.3",

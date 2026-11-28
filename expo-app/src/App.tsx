@@ -11,7 +11,7 @@ import { BRIDGE_SCRIPT } from "./bridge";
 
 // The portal's web address. GitHub Actions sets it from the WEB_URL repository variable; it is a
 // public address, not a secret. Everything the app shows comes from this site and its API.
-const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || "https://time-track-front.vercel.app").replace(/\/+$/, "");
+const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || "https://portals.nfskills.com").replace(/\/+$/, "");
 const WEB_ORIGIN = new URL(WEB_URL).origin;
 
 SplashScreen.preventAutoHideAsync().catch(() => undefined);

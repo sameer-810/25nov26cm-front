@@ -1,0 +1,39 @@
+{
+  "name": "nfskills-portal-desktop",
+  "productName": "NF Skills Portal",
+  "version": "1.0.0",
+  "description": "NF Skills Portal for Windows",
+  "author": "NF Skills",
+  "private": true,
+  "main": "main.js",
+  "portalUrl": "https://portals.nfskills.com",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win nsis --publish never"
+  },
+  "build": {
+    "appId": "com.nfskills.portal",
+    "productName": "NF Skills Portal",
+    "icon": "../expo-app/assets/icon.png",
+    "files": [
+      "main.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "artifactName": "nfskills-portal-setup-${version}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "NF Skills Portal"
+    }
+  },
+  "devDependencies": {
+    "electron": "^45.5.0",
+    "electron-builder": "^26.18.0"
+  }
+}
