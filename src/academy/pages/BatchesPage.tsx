@@ -16,6 +16,8 @@ import { Archive, Layers, Loader2, Pencil, Plus, Search, Users } from "lucide-re
 import { useMcqApi } from "@/mcq/lib/api";
 import { nameOf, peopleOptions, toOptions, type Batch, type BatchStatus, type Course, type Person } from "@/academy/lib/academy";
 import { ListState, Picker, StatusBadge } from "@/academy/components/common";
+import { BatchEndDate, needsEndDate } from "@/academy/components/BatchEndDate";
+import { ScheduleField, scheduleError } from "@/academy/components/ScheduleField";
 
 const STATUSES: BatchStatus[] = ["upcoming", "active", "completed", "cancelled"];
 const TONE: Partial<Record<BatchStatus, string>> = { upcoming: "bg-chart-1/10 text-chart-1", active: "bg-chart-2/10 text-chart-2" };
@@ -52,9 +54,16 @@ function BatchDialog({ batch, isAdmin, open, onClose }: { batch: Batch | null; i
     }
   }
 
+  // The end date follows the course's duration; only a course without one asks for it.
+  const duration = (batch ? batch.courseId : courses?.find((c) => c._id === form.courseId))?.duration;
+  const askEnd = needsEndDate(duration);
+
   const save = useMutation({
     mutationFn: () => {
-      const body = { batchName: form.batchName.trim(), startDate: form.startDate, endDate: form.endDate, schedule: form.schedule, status: form.status, students: form.students };
+      const body = {
+        batchName: form.batchName.trim(), startDate: form.startDate, schedule: form.schedule, status: form.status, students: form.students,
+        ...(askEnd ? { endDate: form.endDate } : {}),
+      };
       if (batch) return api.put<Batch>(`/api/batches/${batch._id}`, body);
       return api.post<Batch>("/api/batches", { ...body, courseId: form.courseId, ...(isAdmin ? { teacherId: form.teacherId } : {}) });
     },
@@ -70,8 +79,8 @@ function BatchDialog({ batch, isAdmin, open, onClose }: { batch: Batch | null; i
   const term = studentSearch.trim().toLowerCase();
   const shown = term ? students.filter((s) => `${nameOf(s)} ${s.userId || ""}`.toLowerCase().includes(term)) : students;
   const toggle = (id: string, on: boolean) => set("students", on ? [...form.students, id] : form.students.filter((s) => s !== id));
-  const ready = !!form.batchName.trim() && !!form.startDate && !!form.endDate && form.endDate >= form.startDate
-    && (!!batch || (!!form.courseId && (!isAdmin || !!form.teacherId)));
+  const ready = !!form.batchName.trim() && !!form.startDate && (!askEnd || (!!form.endDate && form.endDate >= form.startDate))
+    && !scheduleError(form.schedule) && (!!batch || (!!form.courseId && (!isAdmin || !!form.teacherId)));
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
@@ -93,13 +102,9 @@ function BatchDialog({ batch, isAdmin, open, onClose }: { batch: Batch | null; i
               <Label htmlFor="batch-start">Start date</Label>
               <Input id="batch-start" type="date" required value={form.startDate} onChange={(e) => set("startDate", e.target.value)} data-testid="input-batch-start" />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="batch-end">End date</Label>
-              <Input id="batch-end" type="date" required min={form.startDate || undefined} value={form.endDate} onChange={(e) => set("endDate", e.target.value)} data-testid="input-batch-end" />
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label htmlFor="batch-schedule">Schedule</Label>
-              <Input id="batch-schedule" maxLength={300} placeholder="e.g. Mon, Wed, Fri 10:00-12:00" value={form.schedule} onChange={(e) => set("schedule", e.target.value)} data-testid="input-batch-schedule" />
+            <BatchEndDate id="input-batch-end" startDate={form.startDate} duration={duration} endDate={form.endDate} onEndDateChange={(v) => set("endDate", v)} />
+            <div className="sm:col-span-2">
+              <ScheduleField id="input-batch-schedule" value={form.schedule} onChange={(v) => set("schedule", v)} />
             </div>
           </div>
           <fieldset className="space-y-2">

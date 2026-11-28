@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useMcqApi } from "@/mcq/lib/api";
 import type { Course } from "@/academy/lib/academy";
+import { parseDuration } from "@/academy/lib/duration";
 
 interface Props {
   open: boolean;
@@ -57,7 +58,12 @@ export function CourseDialog({ open, course, onClose, onSaved }: Props) {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="course-duration">Duration <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>
-            <Input id="course-duration" value={form.duration} maxLength={100} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="e.g. 6 months" data-testid="input-course-duration" />
+            <Input id="course-duration" value={form.duration} maxLength={100} onChange={(e) => setForm({ ...form, duration: e.target.value })} placeholder="e.g. 3 months, 12 weeks, 90 days" data-testid="input-course-duration" />
+            {form.duration.trim() && !parseDuration(form.duration) ? (
+              <p className="text-xs text-chart-4" data-testid="text-duration-unreadable">Use a number and a unit, e.g. 3 months. Otherwise each batch needs an end date.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">Batches of this course end this long after their start date.</p>
+            )}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="course-description">Description <span className="text-xs font-normal text-muted-foreground">(optional)</span></Label>

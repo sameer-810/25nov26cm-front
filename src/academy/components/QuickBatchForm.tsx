@@ -9,6 +9,7 @@ import { Loader2 } from "lucide-react";
 import { useMcqApi } from "@/mcq/lib/api";
 import { peopleOptions, type Batch, type Course, type Person } from "@/academy/lib/academy";
 import { Picker } from "@/academy/components/common";
+import { BatchEndDate, needsEndDate } from "@/academy/components/BatchEndDate";
 
 interface Props {
   defaultDate: string;
@@ -31,12 +32,15 @@ export default function QuickBatchForm({ defaultDate, chooseTeacher, onCreated, 
     enabled: chooseTeacher,
   });
 
+  const duration = courses?.find((c) => c._id === form.courseId)?.duration;
+  const askEnd = needsEndDate(duration);
+
   const create = useMutation({
     mutationFn: () => api.post<Batch>("/api/batches", {
       courseId: form.courseId,
       batchName: form.batchName.trim(),
       startDate: form.startDate,
-      endDate: form.endDate,
+      ...(askEnd ? { endDate: form.endDate } : {}),
       ...(chooseTeacher ? { teacherId: form.teacherId } : {}),
     }),
     onSuccess: async (batch) => {
@@ -48,7 +52,8 @@ export default function QuickBatchForm({ defaultDate, chooseTeacher, onCreated, 
     onError: (err: Error) => toast({ title: "Batch not created", description: err.message, variant: "destructive" }),
   });
 
-  const ready = !!form.courseId && !!form.batchName.trim() && !!form.startDate && !!form.endDate && form.endDate >= form.startDate && (!chooseTeacher || !!form.teacherId);
+  const ready = !!form.courseId && !!form.batchName.trim() && !!form.startDate
+    && (!askEnd || (!!form.endDate && form.endDate >= form.startDate)) && (!chooseTeacher || !!form.teacherId);
 
   return (
     <div className="col-span-1 sm:col-span-2 rounded-md border p-3 space-y-3" data-testid="panel-quick-batch">
@@ -63,10 +68,7 @@ export default function QuickBatchForm({ defaultDate, chooseTeacher, onCreated, 
           <Label htmlFor="quick-batch-start">Start date</Label>
           <Input id="quick-batch-start" type="date" value={form.startDate} onChange={(e) => set("startDate", e.target.value)} data-testid="input-quick-batch-start" />
         </div>
-        <div className="space-y-1">
-          <Label htmlFor="quick-batch-end">End date</Label>
-          <Input id="quick-batch-end" type="date" value={form.endDate} min={form.startDate} onChange={(e) => set("endDate", e.target.value)} data-testid="input-quick-batch-end" />
-        </div>
+        <BatchEndDate id="input-quick-batch-end" startDate={form.startDate} duration={duration} endDate={form.endDate} onEndDateChange={(v) => set("endDate", v)} />
         {chooseTeacher && <Picker label="Batch teacher" value={form.teacherId} onChange={(v) => set("teacherId", v)} options={peopleOptions(teachers)} testId="select-quick-batch-teacher" />}
       </div>
       <div className="flex gap-2 justify-end">
