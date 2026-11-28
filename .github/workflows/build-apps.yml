@@ -1,7 +1,8 @@
 name: Build apps
 
 # Builds the portal's apps from this repository:
-#   Android  .apk  (expo-app/, Ubuntu)
+#   Android  .apk  (expo-app/, Ubuntu; to install directly)
+#   Android  .aab  (expo-app/, Ubuntu; to upload to Google Play)
 #   iOS      .ipa  (expo-app/, macOS; unsigned, see below)
 #   Windows  .exe  (desktop/, Windows installer)
 # All three open the portal website, so a website change needs no new app. Download the files from
@@ -33,6 +34,13 @@ env:
 
 jobs:
   android:
+    name: android (${{ matrix.ext }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { profile: preview, ext: apk }
+          - { profile: production, ext: aab }
     runs-on: ubuntu-latest
     timeout-minutes: 60
     defaults:
@@ -55,12 +63,12 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       # Runs on this machine (no EAS build minutes); EAS supplies the signing key and the next version code.
-      - name: Build signed APK with EAS
-        run: npx --yes eas-cli@latest build --local --platform android --profile preview --non-interactive --output "nfskills-portal-${{ github.run_number }}.apk"
+      - name: Build signed ${{ matrix.ext }} with EAS
+        run: npx --yes eas-cli@latest build --local --platform android --profile ${{ matrix.profile }} --non-interactive --output "nfskills-portal-${{ github.run_number }}.${{ matrix.ext }}"
       - uses: actions/upload-artifact@v5
         with:
-          name: android-apk-${{ github.run_number }}
-          path: expo-app/nfskills-portal-*.apk
+          name: android-${{ matrix.ext }}-${{ github.run_number }}
+          path: expo-app/nfskills-portal-*.${{ matrix.ext }}
           if-no-files-found: error
           retention-days: 30
 
